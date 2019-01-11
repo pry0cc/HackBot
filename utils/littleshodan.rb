@@ -7,4 +7,8 @@ class LittleShodan
     def host(ip)
         return JSON.parse(@agent.get("https://api.shodan.io/shodan/host/#{ip}?key=#{@apikey}").body())
     end
+
+    def count(query)
+        return JSON.parse(@agent.get("https://api.shodan.io/shodan/host/count?query=#{query}&key=#{@apikey}").body())
+    end
 end

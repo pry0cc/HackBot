@@ -4,11 +4,13 @@ require 'discordrb'
 require 'json'
 require 'mechanize'
 require 'creek'
+require 'base64'
 require './utils/dnsdumpster.rb'
 require './utils/greynoise.rb'
 require './utils/littleshodan.rb'
 require './utils/reversewhois.rb'
 require './utils/ipinfo.rb'
+require './utils/hashcracker.rb'
 
 tokens = {}
 
@@ -22,34 +24,53 @@ else
     puts "tokens.json does not exist."
 end
 
+# Class initializations
 ipinfo = IPInfo.new(tokens["shodan"])
+shodan = LittleShodan.new(tokens["shodan"])
 dnsdumpster = DNSDumpster.new()
 whois = ReverseWhois.new()
+hashcracker = HashCracker.new()
 bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
 
 # Help menu
 bot.command(:help) do |event|
-  event << "yo scanip: Get IP info/passive scan with shodan/greynoise"
-  event << "yo getsubs: Get Subdomains from DNSDumpster"
-  event << "yo getmap: Get Subdomains map from DNSDumpster"
+  event << "**yo scanip** *domain*: Get IP info/passive scan with shodan/greynoise"
+  event << "**yo getsubs** *domain*: Get Subdomains from DNSDumpster"
+  event << "**yo getmap** *domain*: Get Subdomains map from DNSDumpster"
+  event << "**yo getrefs** *ip*: Get censys/shodan references"
+  event << "**yo revwhois** *name/query*: Get Reversewhois results"
+  event << "**yo crackhash** *hash*: Crack hash"
+  event << "**yo prettyjson** *json*: Pretty Print JSON"
+  event << "**yo b64encode** *text*"
+  event << "**yo b64decode** *base64*"
+  event << "**yo shodancount** *query*"
+
 end
 
 # Get OSINT on IP
 bot.command(:scanip) do |event, ip|
     output = ""
     begin
-        data = ipinfo.scan(ip)
-        output += "**IP:** #{data["ip"]}\n"
-        output += "**Ports:** #{data["ports"]}\n"
-        output += "**City:** #{data["city"]} **Region:** #{data["region"]} **Coordinates:** #{data["loc"]} **Country:** #{data["country"]}  :flag_#{data["country"].downcase}:\n"
-        output += "**Organisation:** #{data["org"]}\n"
-        output += "**Reported:** #{data["ip_reported"]} #{data["reported_reason"]}\n"
-        output += "**Greynoise**: #{data["greynoise_seen"]}\n"
+        puts "[#{ip}]"
+        if ip != nil
+            ip.gsub!(" ", "")
+        end
+        if ip != nil and ip != ""
+            data = ipinfo.scan(ip)
+            output += "**IP:** #{data["ip"]}\n"
+            output += "**Ports:** #{data["ports"]}\n"
+            output += "**City:** #{data["city"]} **Region:** #{data["region"]} **Coordinates:** #{data["loc"]} **Country:** #{data["country"]}  :flag_#{data["country"].downcase}:\n"
+            output += "**Organisation:** #{data["org"]}\n"
+            output += "**Reported:** #{data["ip_reported"]} #{data["reported_reason"]}\n"
+            output += "**Greynoise**: #{data["greynoise_seen"]}\n"
 
-        if data["greynoise_seen"]
-            data["greynoise_data"].each do |result|
-                event << "**Name**: #{result["name"]} **Intention:** #{result["intention"]} **First Seen:** #{result["first_seen"]} **Last Seen:** #{result["last_seen"]} **Category:** #{result["category"]} **Intention:** #{result["intention"]} **Confidence:** #{result["confidence"]}\n"
+            if data["greynoise_seen"]
+                data["greynoise_data"].each do |result|
+                    event << "**Name**: #{result["name"]} **Intention:** #{result["intention"]} **First Seen:** #{result["first_seen"]} **Last Seen:** #{result["last_seen"]} **Category:** #{result["category"]} **Intention:** #{result["intention"]} **Confidence:** #{result["confidence"]}\n"
+                end
             end
+        else
+            output += "You have to supply output\n"
         end
     rescue => e
         output += "Something went wrong here. #{e.to_s}"
@@ -123,6 +144,102 @@ bot.command(:revwhois) do |event, *args|
         if output.length >= 1998
             output = output[0..1985]
             output += " (truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# Preform reversewhois on host
+bot.command(:shodancount) do |event, *args|
+    output = ""
+    begin
+        count = shodan.count(args.join("+"))["total"]
+        output += "The query '#{args.join(" ")}' returned a total host count of **#{count}**\n"
+        output += "https://shodan.io/search?query=#{args.join("+")}"
+    rescue => e
+        output += "Something went wrong here. I can't tell you what."
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += " (truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# PrettyJSON
+bot.command(:prettyjson) do |event, json|
+    output = ""
+    begin
+        obj = JSON.parse(json)
+        output += '```'
+        JSON.pretty_generate(obj).split("\n").each do |line|
+            output += "#{line}\n"
+        end
+        output += '```'
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated) ```"
+        else
+            return output
+        end
+    end
+end
+
+# Crackhash
+bot.command(:crackhash) do |event, passhash|
+    output = ""
+    begin
+        obj = hashcracker.crack(passhash)
+        output += "**Hash:** #{obj["hash"]}\n"
+        output += "**Plaintext:** #{obj["plaintext"]}"
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# Base64 encode
+bot.command(:b64encode) do |event, *args|
+    output = ""
+    begin
+        output += Base64.encode64(*args.join(" "))
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+
+
+# Base64 decode
+bot.command(:b64decode) do |event, base64_text|
+    output = ""
+    begin
+        output += "```" + Base64.decode64(base64_text) + "```"
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
         else
             return output
         end
