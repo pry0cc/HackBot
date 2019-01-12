@@ -11,6 +11,7 @@ require './utils/littleshodan.rb'
 require './utils/reversewhois.rb'
 require './utils/ipinfo.rb'
 require './utils/hashcracker.rb'
+require './utils/impy/impy.rb'
 
 tokens = {}
 
@@ -30,6 +31,7 @@ shodan = LittleShodan.new(tokens["shodan"])
 dnsdumpster = DNSDumpster.new()
 whois = ReverseWhois.new()
 hashcracker = HashCracker.new()
+impy = Impy.new("utils/impy/shell.asm")
 bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
 
 # Help menu
@@ -245,5 +247,26 @@ bot.command(:b64decode) do |event, base64_text|
         end
     end
 end
+
+# Impy reverse shells
+bot.command(:gimmeshell) do |event, ipport|
+    output = ""
+    begin
+        ip, port = ipport.split(":")
+
+        res = impy.genPayload(ip, port)
+        output += "```#{res}```\n"
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
 
 bot.run
