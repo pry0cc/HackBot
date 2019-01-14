@@ -1,0 +1,13 @@
+{
+    "admin":"",
+    "roles":{
+        "pentesters":{
+            "id":123, 
+            "level":10
+        },
+        "devs":{
+            "id":456, 
+            "level":10
+        }
+    }
+}
