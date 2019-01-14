@@ -14,6 +14,7 @@ require './utils/hashcracker.rb'
 require './utils/impy/impy.rb'
 
 tokens = {}
+perm = {}
 
 if File.file?("tokens.json")
     begin
@@ -31,8 +32,20 @@ shodan = LittleShodan.new(tokens["shodan"])
 dnsdumpster = DNSDumpster.new()
 whois = ReverseWhois.new()
 hashcracker = HashCracker.new()
-impy = Impy.new("utils/impy/shell.asm")
 bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
+
+
+if File.file?("perms.json")
+    begin
+        perms = JSON.parse(File.open("perms.json").read())
+        perms["roles"].each do |name, data|
+            bot.set_role_permission(data["id"], data["level"])
+        end
+    rescue => e
+        puts "perms.json is either invalid or empty! #{e.to_s}"
+    end
+end
+
 
 # Help menu
 bot.command(:help) do |event|
@@ -229,8 +242,6 @@ bot.command(:b64encode) do |event, *args|
     end
 end
 
-
-
 # Base64 decode
 bot.command(:b64decode) do |event, base64_text|
     output = ""
@@ -248,10 +259,17 @@ bot.command(:b64decode) do |event, base64_text|
     end
 end
 
+#pentesters @ priv
+bot.set_role_permission(531932750974943232, 10)
+
+#devs @ 0x00sec
+bot.set_role_permission(533789539290972180, 10)
+
 # Impy reverse shells
-bot.command(:gimmeshell) do |event, ipport|
+bot.command(:gimmeshell, permission_level: 10) do |event, ipport|
     output = ""
     begin
+        impy = Impy.new("utils/impy/shell.asm")
         ip, port = ipport.split(":")
 
         res = impy.genPayload(ip, port)
