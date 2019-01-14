@@ -8,9 +8,11 @@ require 'base64'
 require './utils/dnsdumpster.rb'
 require './utils/greynoise.rb'
 require './utils/littleshodan.rb'
-require './utils/reversewhois.rb'
+require './utils/whois.rb'
 require './utils/ipinfo.rb'
 require './utils/hashcracker.rb'
+require './utils/hashfactory.rb'
+require './utils/linkedin.rb'
 require './utils/impy/impy.rb'
 
 tokens = {}
@@ -32,8 +34,9 @@ shodan = LittleShodan.new(tokens["shodan"])
 dnsdumpster = DNSDumpster.new()
 whois = ReverseWhois.new()
 hashcracker = HashCracker.new()
+linkedin = Linkedin.new()
+hashfactory = HashFactory.new()
 bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
-
 
 if File.file?("perms.json")
     begin
@@ -45,7 +48,6 @@ if File.file?("perms.json")
         puts "perms.json is either invalid or empty! #{e.to_s}"
     end
 end
-
 
 # Help menu
 bot.command(:help) do |event|
@@ -60,7 +62,6 @@ bot.command(:help) do |event|
   event << "**yo b64decode** *base64*"
   event << "**yo shodancount** *query*"
   event << "**yo gimmeshell** *127.0.0.1:8080*: Generate a reverse shell with ELF + Base64. Restricted command."
-
 end
 
 # Example command
@@ -91,12 +92,10 @@ bot.command(:example_command) do |event, optional_var|
     end
 end
 
-
 # Get OSINT on IP
 bot.command(:scanip) do |event, ip|
     output = ""
     begin
-        puts "[#{ip}]"
         if ip != nil
             ip.gsub!(" ", "")
         end
@@ -244,7 +243,12 @@ bot.command(:crackhash) do |event, passhash|
         output += "**Hash:** #{obj["hash"]}\n"
         output += "**Plaintext:** #{obj["plaintext"]}"
     rescue => e
-        output += "Something went wrong here. #{e.to_s}"
+        error_code = e.to_s.split(" ")[0]
+        if error_code == "404"
+            output += "Hash not found"
+        else
+            output += "Something went wrong here. #{e.to_s}"
+        end
     else
         if output.length >= 1998
             output = output[0..1985]
@@ -304,6 +308,70 @@ bot.command(:gimmeshell, permission_level: 10) do |event, ipport|
         if output.length >= 1998
             output = output[0..1985]
             output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# Lookup Company Linkedin url 
+bot.command(:companylinkedin) do |event, *args|
+    output = ""
+    begin
+        url = linkedin.company_page(args.join("+"))
+        output += "#{url}\n"
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += " (truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# Preform hash functions
+bot.command(:hash) do |event, hashtype, *args|
+    output = ""
+    begin
+        data = args.join(" ")
+        output += "```#{hashfactory.gen_hash(data, hashtype)}```"
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += " (truncated)"
+        else
+            return output
+        end
+    end
+end
+
+# Preform hash functions
+bot.command(:hashlookup) do |event, hashtext|
+    output = ""
+    begin
+        algos = hashfactory.identify_hash(hashtext)
+        
+        if algos.length > 0
+            output += "Found #{algos.length} potential hash types.\n"
+            output += "```"
+            algos.each do | algo |
+                output += "#{algo}\n"
+            end
+            output += "```"
+        else
+            output += "No hashtypes found."
+        end
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += " (truncated)"
         else
             return output
         end
