@@ -259,12 +259,6 @@ bot.command(:b64decode) do |event, base64_text|
     end
 end
 
-#pentesters @ priv
-bot.set_role_permission(531932750974943232, 10)
-
-#devs @ 0x00sec
-bot.set_role_permission(533789539290972180, 10)
-
 # Impy reverse shells
 bot.command(:gimmeshell, permission_level: 10) do |event, ipport|
     output = ""
