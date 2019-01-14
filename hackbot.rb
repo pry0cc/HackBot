@@ -59,8 +59,38 @@ bot.command(:help) do |event|
   event << "**yo b64encode** *text*"
   event << "**yo b64decode** *base64*"
   event << "**yo shodancount** *query*"
+  event << "**yo gimmeshell** *127.0.0.1:8080*: Generate a reverse shell with ELF + Base64. Restricted command."
 
 end
+
+# Example command
+## You can copy this entire block, change the command name, and implement new code things
+## with error checking easily!
+bot.command(:example_command) do |event, optional_var|
+    output = ""
+    begin
+        #                         #
+        # do something fun!       #
+        # Your code here          #
+        #                         #
+        output += "Hello world! :joy: #{optional_var}\n"
+        # Anything you put in output, is displayed
+        # You need to separate newlines, you can also add emojis!
+    rescue => e
+        # Catch errors and output error
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        # Truncate as Discord only allows 2000 chars
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            # If all went well, return it! (this prints it to the display)
+            return output
+        end
+    end
+end
+
 
 # Get OSINT on IP
 bot.command(:scanip) do |event, ip|
@@ -280,5 +310,5 @@ bot.command(:gimmeshell, permission_level: 10) do |event, ipport|
     end
 end
 
-
+# RUN THE BOT - this is important
 bot.run
