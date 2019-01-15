@@ -5,6 +5,7 @@ require 'json'
 require 'mechanize'
 require 'creek'
 require 'base64'
+require 'csv'
 require './utils/dnsdumpster.rb'
 require './utils/greynoise.rb'
 require './utils/littleshodan.rb'
@@ -14,6 +15,7 @@ require './utils/hashcracker.rb'
 require './utils/hashfactory.rb'
 require './utils/linkedin.rb'
 require './utils/impy/impy.rb'
+require './utils/exploitdb.rb'
 
 tokens = {}
 perm = {}
@@ -36,6 +38,7 @@ whois = ReverseWhois.new()
 hashcracker = HashCracker.new()
 linkedin = Linkedin.new()
 hashfactory = HashFactory.new()
+exploitdb = ExploitDB.new(exploit_csv="utils/exploitdb/files_exploits.csv", shellcode_csv="utils/exploitdb/files_shellcodes.csv")
 bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
 
 if File.file?("perms.json")
@@ -62,6 +65,9 @@ bot.command(:help) do |event|
   event << "**yo b64decode** *base64*"
   event << "**yo shodancount** *query*"
   event << "**yo gimmeshell** *127.0.0.1:8080*: Generate a reverse shell with ELF + Base64. Restricted command."
+  event << "**yo hashlookup** *somehash*: Identify a hash"
+  event << "**yo hash** *sha256* *text*: Identify a hash"
+  event << "**yo companylinkedin** *company name*: Try and find company linkedin page."
 end
 
 # Example command
@@ -372,6 +378,87 @@ bot.command(:hashlookup) do |event, hashtext|
         if output.length >= 1998
             output = output[0..1985]
             output += " (truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:exploits) do |event, *args|
+    output = ""
+    begin
+        query = args.join(" ")
+        
+        res = exploitdb.search_exploits(query)
+        if res.length > 0
+            output += "https://www.exploit-db.com/search?q=#{args.join("+")}\n"
+            output += "```"
+            res.each do |exploit|
+                output += "#{exploit["id"]} - #{exploit["title"]} - #{exploit["author"]}\n"
+            end
+            output += "```"
+        else
+            output += "No results"
+        end
+        
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += " ```(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:shellcodes) do |event, *args|
+    output = ""
+    begin
+        query = args.join(" ")
+        
+        res = exploitdb.search_shellcodes(query)
+        if res.length > 0
+            output += "https://www.exploit-db.com/search?q=#{args.join("+")}&type=shellcode\n"
+            output += "```"
+            res.each do |shellcode|
+                output += "#{shellcode["id"]} - #{shellcode["description"]} - #{shellcode["author"]}\n"
+            end
+            output += "```"
+        else
+            output += "No results"
+        end
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "```(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+
+bot.command(:getfile) do |event, id|
+    output = ""
+    begin
+        file = exploitdb.get_file(id, path="utils/exploitdb")
+
+        if file != nil 
+            output += "`wget https://www.exploit-db.com/raw/#{id}\n`"
+            event.channel.send_file file
+        else
+            output += "ID doesn't exist..."
+        end
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
         else
             return output
         end

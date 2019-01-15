@@ -1,3 +1,6 @@
 [submodule "utils/impy"]
 	path = utils/impy
 	url = git@github.com:pry0cc/Impy.git
+[submodule "utils/exploitdb"]
+	path = utils/exploitdb
+	url = https://github.com/offensive-security/exploitdb.git
