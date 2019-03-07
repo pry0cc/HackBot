@@ -6,6 +6,10 @@ require 'mechanize'
 require 'creek'
 require 'base64'
 require 'csv'
+require 'blockchain'
+require 'droplet_kit'
+require 'uptimerobot'
+require 'tempfile'
 require './utils/dnsdumpster.rb'
 require './utils/greynoise.rb'
 require './utils/littleshodan.rb'
@@ -16,9 +20,15 @@ require './utils/hashfactory.rb'
 require './utils/linkedin.rb'
 require './utils/impy/impy.rb'
 require './utils/exploitdb.rb'
+require './utils/hibp.rb'
+require './utils/shellbox.rb'
+require './utils/chattable.rb'
+require './utils/sploitus.rb'
 
 tokens = {}
 perm = {}
+brain = {}
+
 
 if File.file?("tokens.json")
     begin
@@ -39,7 +49,14 @@ hashcracker = HashCracker.new()
 linkedin = Linkedin.new()
 hashfactory = HashFactory.new()
 exploitdb = ExploitDB.new(exploit_csv="utils/exploitdb/files_exploits.csv", shellcode_csv="utils/exploitdb/files_shellcodes.csv")
-bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'yo '
+explorer = Blockchain::BlockExplorer.new
+hibp = HaveIBeenPwned.new()
+ct = ChatTable.new()
+# status = 0x00Status.new()
+shellbox = ShellBox.new(tokens["digitalocean"], tokens["domain"], tokens["email"])
+uptimerobot = UptimeRobot::Client.new(api_key: tokens["uptime_robot"])
+sploitus = Sploitus.new()
+bot = Discordrb::Commands::CommandBot.new token: tokens["discord_client_token"], prefix: 'karen, '
 
 if File.file?("perms.json")
     begin
@@ -52,22 +69,63 @@ if File.file?("perms.json")
     end
 end
 
+if File.file?("brain.json")
+    begin
+        brain = JSON.parse(File.open("brain.json").read())
+    rescue => e
+        puts "brain.json is either invalid or empty! #{e.to_s}"
+    end
+end
+
+bot.message() do |event|
+  if event.server.name == "0x00sec VIP"
+    words = event.content.split(" ")
+    words.each do |word|
+        if word[0..6] == "http://"
+            bot.send_message(547503178162110476, word)
+        elsif word[0..7] == "https://"
+            bot.send_message(547503178162110476, word)
+        end
+    end
+  end
+  # The `respond` method returns a `Message` object, which is stored in a variable `m`. The `edit` method is then called
+  # to edit the message with the time difference between when the event was received and after the message was sent.
+end
+
 # Help menu
 bot.command(:help) do |event|
-  event << "**yo scanip** *domain*: Get IP info/passive scan with shodan/greynoise"
-  event << "**yo getsubs** *domain*: Get Subdomains from DNSDumpster"
-  event << "**yo getmap** *domain*: Get Subdomains map from DNSDumpster"
-  event << "**yo getrefs** *ip*: Get censys/shodan references"
-  event << "**yo revwhois** *name/query*: Get Reversewhois results"
-  event << "**yo crackhash** *hash*: Crack hash"
-  event << "**yo prettyjson** *json*: Pretty Print JSON"
-  event << "**yo b64encode** *text*"
-  event << "**yo b64decode** *base64*"
-  event << "**yo shodancount** *query*"
-  event << "**yo gimmeshell** *127.0.0.1:8080*: Generate a reverse shell with ELF + Base64. Restricted command."
-  event << "**yo hashlookup** *somehash*: Identify a hash"
-  event << "**yo hash** *sha256* *text*: Identify a hash"
-  event << "**yo companylinkedin** *company name*: Try and find company linkedin page."
+  event << "**Passive Recon**```"
+  event << "karen, scanip  <domain>               : Get IP info/passive scan with shodan/greynoise"
+  event << "karen, getsubs <domain>               : Get Subdomains from DNSDumpster"
+  event << "karen, getmap* <domain>               : Get Subdomains map from DNSDumpster"
+  event << "karen, getrefs <ip>                   : Get censys/shodan references"
+  event << "karen, shodancount <query>            : Get Shodan count"
+  event << "karen, revwhois <name/query>          : Get Reversewhois results"
+  event << "karen, companylinkedin <company name> : Try and find company linkedin page."
+  event << "karen, pwned <email>                  : Query HaveIBeenPwned for breaches"
+  event << "```"
+
+  event << "** Crypto ** ```"
+  event << "karen, prettyjson <json>              : Pretty Print JSON"
+  event << "karen, b64encode <text>               : Encode to Base64"
+  event << "karen, b64decode <base64>             : Decode Base64"
+  event << "karen, crackhash <hash>               : Crack hash"
+  event << "karen, hashlookup <somehash>          : Identify a hash"
+  event << "karen, hash sha256 <text>             : Identify a hash"
+  event << "karen, btclookup <btcaddress>         : Get information from a BTC address"
+  event << "```"
+
+  event << "** Shells and Exploits**```"
+  event << "karen, gimmeshell <ip:port>           : Generate a reverse shell with ELF + Base64. Restricted command."
+  event << "karen, exploits <query>               : Search ExploitDB for exploits"
+  event << "karen, shellcodes <query>             : Search ExploitDB for shellcodes"
+  event << "karen, getfile <id>                   : Get file from exploitdb, using its ID"
+  event << "```"
+
+  event << "** 0x00sec **"
+  event << "```"
+  event << "karen, status"
+  event << "```"
 end
 
 # Example command
@@ -246,8 +304,7 @@ bot.command(:crackhash) do |event, passhash|
     output = ""
     begin
         obj = hashcracker.crack(passhash)
-        output += "**Hash:** #{obj["hash"]}\n"
-        output += "**Plaintext:** #{obj["plaintext"]}"
+        output += "```#{obj}```"
     rescue => e
         error_code = e.to_s.split(" ")[0]
         if error_code == "404"
@@ -300,14 +357,37 @@ bot.command(:b64decode) do |event, base64_text|
 end
 
 # Impy reverse shells
-bot.command(:gimmeshell, permission_level: 10) do |event, ipport|
+bot.command(:gimmeshell) do |event, format_opt, ipport|
     output = ""
     begin
-        impy = Impy.new("utils/impy/shell.asm")
-        ip, port = ipport.split(":")
+        if format_opt == "elf"
+            impy = Impy.new("utils/impy/shell.asm")
+            ip, port = ipport.split(":")
 
-        res = impy.genPayload(ip, port)
-        output += "```#{res}```\n"
+            res = impy.genPayload(ip, port)
+            output += "```#{res}```\n"
+        elsif format_opt == "perl"
+            impy = Impy.new("utils/impy/shell.asm")
+            ip, port = ipport.split(":")
+
+            res = impy.perlPayload(ip, port)
+            output += "```#{res}```\n"
+        elsif format_opt == "python"
+            impy = Impy.new("utils/impy/shell.asm")
+            ip, port = ipport.split(":")
+
+            res = impy.pythonPayload(ip, port)
+            output += "```#{res}```\n"
+        elsif format_opt == "php"
+            impy = Impy.new("utils/impy/shell.asm")
+            ip, port = ipport.split(":")
+
+            res = impy.phpPayload(ip, port)
+            event.channel.send_file res
+            res.close()
+        else
+            output += "Format not found\n"
+        end
     rescue => e
         output += "Something went wrong here. #{e.to_s}"
     else
@@ -400,15 +480,14 @@ bot.command(:exploits) do |event, *args|
         else
             output += "No results"
         end
-        
     rescue => e
         output += "Something went wrong here. #{e.to_s}"
     else
-        if output.length >= 1998
-            output = output[0..1985]
+        if output.length >= 1995
+            output = output[0..1980]
             output += " ```(truncated)"
         else
-            return output
+            return output.chomp
         end
     end
 end
@@ -455,6 +534,331 @@ bot.command(:getfile) do |event, id|
         end
     rescue => e
         output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:remember, permission_level: 15) do |event, key, *args|
+    output = ""
+
+    value = args.join(" ")
+    value.gsub!("`", "")
+    key.gsub!("`", "")
+
+    output += "Updating key:'#{key}'" if brain.key?(key)
+    output += "I remembered '#{key}'" if !brain.key?(key)
+
+    brain[key] = value
+    File.open("brain.json", 'w') { |file| file.write(JSON.generate(brain)) }
+
+    output += ""
+
+    begin
+        
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:recall, permission_level: 15) do |event, key|
+    output = ""
+
+    if key == nil
+        output += '```'
+        JSON.pretty_generate(brain).split("\n").each do |line|
+            output += "#{line}\n"
+        end
+        output += '```'
+    else
+        if brain.key?(key)
+            output += "I remembered that '#{key}' contained ```#{brain[key]}```"
+        else
+            output += "Key does not exist\n"
+        end
+    end
+    output += ""
+
+    begin
+        
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:forget, permission_level: 15) do |event, key|
+    output = ""
+
+    begin
+        if key == nil
+            output += "Forget what?"
+        else
+            output += "I forgot '#{key}'\n" if brain.key?(key)
+            output += "I didn't forget it, because I never knew it\n" if ! brain.key?(key)
+            brain.delete(key) if brain.key?(key)
+            File.open("brain.json", 'w') { |file| file.write(JSON.generate(brain)) }
+
+        end
+        output += ""        
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:btclookup) do |event, address|
+    begin
+        output = ""
+        address_obj = explorer.get_address_by_base58(address) 
+
+        balance = address_obj.final_balance.to_f / 100000000
+        total_received = address_obj.total_received.to_f / 100000000
+        total_sent = address_obj.total_sent.to_f / 100000000
+        transactions_total = address_obj.transactions.length
+
+        output += "Information for address: **#{address}**"
+        output += "```"
+        output += "Balance: #{balance} BTC\n"
+        output += "Total Received: #{total_received} BTC\n"
+        output += "Total Sent: #{total_sent} BTC\n"
+        output += "Number of Transactions: #{transactions_total}\n"
+        output += "```"
+        
+    rescue => e
+        output += "Something went wrong here. #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+
+bot.command(:pwned) do |event, email|
+    begin
+        output = ""
+
+        res = hibp.getBreaches(email)
+
+        output += "Found **#{res.length}** breaches for **#{email}**\n"
+        output += "```"
+        res.each do |breach|
+            output += "#{breach["Name"]} - #{breach["Domain"]} - #{breach["BreachDate"]}\n"
+        end     
+        output += "```"
+    rescue => e
+        output += "No Breaches found."
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:sploitus) do |event, query|
+    begin
+        output = ""
+
+        res = sploitus.search_exploits(query)
+
+        output += "Found **#{res.length}** exploits for **#{query}**\n"
+        output += "```"
+        res.each do |exploit|
+            output += "#{exploit["title"]} - #{exploit["score"]} - #{exploit["href"]} - #{exploit["type"]} - #{exploit["published"]}\n"
+        end     
+        output += "```"
+    rescue => e
+        output += "No exploits found."
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:sploitustools) do |event, query|
+    begin
+        output = ""
+
+        res = sploitus.search_tools(query)
+
+        output += "Found **#{res.length}** tools for **#{query}**\n"
+        res.each do |tool|
+            output += "**#{tool["title"]}** \n`#{tool["download"]}`\n"
+        end     
+    rescue => e
+        output += "No tools found."
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:shellmeup, permission_level: 15) do |event, droplet_name|
+    begin
+        output = ""
+        droplet_name.gsub!("`", "")
+        if droplet_name != nil
+
+            event.channel.send "Spinning up #{droplet_name}"
+            output += shellbox.gimmeShell(droplet_name)
+
+        end
+    rescue => e
+        output += "Idk bro, probably your fat fingers"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:kill, permission_level: 15) do |event, droplet_name|
+    begin
+        output = ""
+        droplet_name.gsub!("`", "")
+        if droplet_name != nil
+            event.channel.send "Destroying #{droplet_name}"
+            output += shellbox.killShell(droplet_name)
+
+        end
+    rescue => e
+        output += "Idk bro, probably your fat fingers #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:shells?, permission_level: 15) do |event|
+    begin
+        output = ""
+        shells = shellbox.listShells()
+        if shells.length > 0
+            output += "**Current Droplets:**"
+            output += "```"
+            output += ct.genTable(shells)
+            output += "```"
+        else
+            output += "No shells active. Use shellmeup to get some!"
+        end
+    rescue => e
+        output += "Idk bro, probably your fat fingers #{e.to_s}"
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+bot.command(:records?, permission_level: 15) do |event, domain|
+    begin
+        output = ""
+        if domain == nil
+            domain = tokens["domain"]
+        end
+        records = shellbox.listRecords(domain)
+        output += "**Current Records for #{domain}:**"
+        output += "```"
+        output += JSON.pretty_generate(JSON.parse(records))
+        output += "```"
+    rescue => e
+        output += "Couldn't find anything related to that."
+    else
+        if output.length >= 1998
+            output = output[0..1985]
+            output += "(truncated)"
+        else
+            return output
+        end
+    end
+end
+
+
+bot.command(:status, permission_level: 15) do |event|
+    begin
+        output = ""
+        res = []
+
+        uptimerobot.getMonitors["monitors"].each do |monitor_data|
+            monitor = {
+                "name"=>monitor_data["friendly_name"]
+            }
+
+            status = ""
+
+            case monitor_data["status"]
+            when 0
+                status = "Paused"
+            when 1
+                status = "Not checked yet"
+            when 2
+                status = "Up"
+            when 8
+                status = "Seems down"
+            when 9
+                status = "Down"
+            end
+
+            monitor["status"] = status
+            res.push(monitor)
+        end 
+
+        output += "Server Uptime Status: \n"
+        output += "```"
+        output += ct.genTable(res)
+        output += "```"
+
+    rescue => e
+        output += "NO IDEA BUCKO"
     else
         if output.length >= 1998
             output = output[0..1985]

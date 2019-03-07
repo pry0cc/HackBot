@@ -4,18 +4,11 @@ class HashCracker
     end
 
     def crack(hash)
-        plaintext = leakz(hash)
-        res = {
-            "hash"=>hash,
-            "plaintext"=>plaintext
-        }
-
-        return res
+        return hashtoolkit(hash)
     end
 
-    def leakz(hash)
-        res = JSON.parse(@agent.get("https://lea.kz/api/hash/#{hash}").body())
-        plaintext = res["password"]
-        return plaintext
+    def hashtoolkit(hash)
+        res = @agent.get("http://hashtoolkit.com/reverse-hash?hash=#{hash}").body()
+        return Nokogiri::HTML(res).at_css(".res-text").css("span")[0].text
     end
 end

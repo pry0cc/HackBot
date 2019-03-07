@@ -33,3 +33,4 @@ class HashFactory
         return potential_algos
     end
 end
+
