@@ -82,9 +82,9 @@ bot.message() do |event|
     words = event.content.split(" ")
     words.each do |word|
         if word[0..6] == "http://"
-            bot.send_message(547503178162110476, word)
+            bot.send_message(547503178162110476, event.user.name + ": " + word)
         elsif word[0..7] == "https://"
-            bot.send_message(547503178162110476, word)
+            bot.send_message(547503178162110476, event.user.name + ": " + word)
         end
     end
   end
